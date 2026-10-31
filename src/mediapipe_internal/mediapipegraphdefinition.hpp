@@ -68,6 +68,8 @@ public:
     }
     const std::vector<std::string>& getLoraAliases() const { return loraAliases; }
     bool shouldHideBaseModelInRouting() const { return hideBaseModelInRouting; }
+    // Only a graph with a single LLM node has a context length to report
+    uint32_t getMaxModelLength() const override { return maxModelLength.load(std::memory_order_relaxed); }
 
     const PipelineDefinitionStateCode getStateCode() const { return status.getStateCode(); }
     bool isAvailable() const override { return status.isAvailable(); }
@@ -168,6 +170,7 @@ private:
     // When using LoRA adapters with STATIC/FUSE Adapter Config mode, lora weights are always active
     // and since that's true we want to expose only lora aliases/composite aliases in routing, and hide base model.
     bool hideBaseModelInRouting = false;
+    std::atomic<uint32_t> maxModelLength{0};
 
     PythonBackend* pythonBackend;
 

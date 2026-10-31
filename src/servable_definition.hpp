@@ -15,6 +15,7 @@
 //*****************************************************************************
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace ovms {
@@ -23,6 +24,8 @@ class ServableDefinition {
 public:
     virtual ~ServableDefinition() = default;
     virtual const std::string& getName() const = 0;
+    // Context length enforced for an LLM servable, 0 if not applicable or unknown
+    virtual uint32_t getMaxModelLength() const { return 0; }
 };
 
 }  // namespace ovms

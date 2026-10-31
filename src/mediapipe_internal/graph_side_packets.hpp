@@ -15,8 +15,10 @@
 //*****************************************************************************
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -78,6 +80,7 @@ struct GraphSidePackets {
     TtsServableMap ttsServableMap;
     std::vector<std::string> loraAliases;
     bool hideBaseModelInRouting = false;
+    std::optional<uint32_t> maxModelLength;
     void clear() {
         pythonNodeResourcesMap.clear();
         genAiServableMap.clear();
@@ -89,6 +92,7 @@ struct GraphSidePackets {
         ttsServableMap.clear();
         loraAliases.clear();
         hideBaseModelInRouting = false;
+        maxModelLength.reset();
     }
     bool empty() {
         return (pythonNodeResourcesMap.empty() &&

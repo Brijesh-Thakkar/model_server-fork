@@ -22,10 +22,12 @@
 #include <gtest/gtest.h>
 
 #include "src/http_rest_api_handler.hpp"
+#include "src/llm/servable_initializer.hpp"
 #include "src/server.hpp"
 #include "src/servable_management/modelmanager.hpp"
 #include "src/servable_management/servablemanagermodule.hpp"
 #include "rapidjson/document.h"
+#include "light_test_utils.hpp"
 #include "test_http_utils.hpp"
 #include "test_utils.hpp"
 #include "test_with_temp_dir.hpp"
@@ -284,4 +286,86 @@ TEST_F(ListModelsEndpointIdleManagementTest, RetiredMediapipeNotListed) {
     const bool includeMediapipe = false;
     reloadConfig(makeConfig(includeModel, includeMediapipe));
     EXPECT_THAT(listModelIds(), ::testing::UnorderedElementsAre("dummy"));
+}
+
+class ListModelsEndpointLlmTest : public TestWithTempDir {
+protected:
+    std::unique_ptr<std::thread> t;
+    std::unique_ptr<ovms::HttpRestApiHandler> handler;
+    std::unordered_map<std::string, std::string> headers{{"content-type", "application/json"}};
+    std::shared_ptr<MockedServerRequestInterface> writer;
+    std::shared_ptr<MockedMultiPartParser> multiPartParser;
+
+    void SetUp() override {
+        TestWithTempDir::SetUp();
+        const std::string config = R"({"model_config_list": [{"config": {"name": "dummy", "base_path": ")" + getGenericFullPathForSrcTest("/ovms/src/test/dummy") +
+                                   R"("}}], "mediapipe_config_list": [{"name": "lm_cb_regular", "graph_path": ")" + getGenericFullPathForSrcTest("/ovms/src/test/llm/lm_cb_regular.pbtxt") +
+                                   R"("}, {"name": "passthroughGraph", "graph_path": ")" + getGenericFullPathForSrcTest("/ovms/src/test/mediapipe/graphpassthrough.pbtxt") + R"("}]})";
+        const std::string configFilePath = directoryPath + "/config.json";
+        createConfigFileWithContent(config, configFilePath);
+        writer = std::make_shared<MockedServerRequestInterface>();
+        multiPartParser = std::make_shared<MockedMultiPartParser>();
+
+        ovms::Server& server = ovms::Server::instance();
+        std::string port = "9178";
+        ::SetUpServer(t, server, port, configFilePath.c_str(), 60);
+        handler = std::make_unique<ovms::HttpRestApiHandler>(server, 5);
+    }
+
+    void TearDown() override {
+        handler.reset();
+        ovms::Server& server = ovms::Server::instance();
+        server.setShutdownRequest(1);
+        t->join();
+        server.setShutdownRequest(0);
+        TestWithTempDir::TearDown();
+    }
+
+    void getJson(const std::string& endpoint, rapidjson::Document& d) {
+        ovms::HttpRequestComponents comp;
+        ovms::HttpResponseComponents responseComponents;
+        std::string response;
+        ASSERT_EQ(handler->parseRequestComponents(comp, "GET", endpoint, headers), ovms::StatusCode::OK);
+        ASSERT_EQ(handler->dispatchToProcessor(endpoint, "", &response, comp, responseComponents, writer, multiPartParser), ovms::StatusCode::OK);
+        ASSERT_EQ(d.Parse(response.c_str()).HasParseError(), false);
+    }
+
+    uint32_t getLlmMaxModelLength() {
+        std::string llmModelPath = getGenericFullPathForSrcTest("/ovms/src/test/llm_testing/mzeglars/dummy-cyclic-gpt2-ov");
+        auto maxModelLength = parseMaxModelLength(llmModelPath);
+        EXPECT_TRUE(maxModelLength.has_value());
+        return maxModelLength.value_or(0);
+    }
+};
+
+TEST_F(ListModelsEndpointLlmTest, maxModelLenInListModels) {
+    const uint32_t expectedMaxModelLength = getLlmMaxModelLength();
+    ASSERT_GT(expectedMaxModelLength, 0u);
+    rapidjson::Document d;
+    getJson("/v1/models", d);
+    ASSERT_TRUE(d["data"].IsArray());
+    ASSERT_EQ(d["data"].Size(), 3);
+    for (const auto& entry : d["data"].GetArray()) {
+        if (entry["id"] == "lm_cb_regular") {
+            ASSERT_TRUE(entry.HasMember("max_model_len"));
+            EXPECT_EQ(entry["max_model_len"].GetUint(), expectedMaxModelLength);
+        } else {
+            EXPECT_FALSE(entry.HasMember("max_model_len")) << entry["id"].GetString();
+        }
+    }
+}
+
+TEST_F(ListModelsEndpointLlmTest, maxModelLenInRetrieveModel) {
+    const uint32_t expectedMaxModelLength = getLlmMaxModelLength();
+    ASSERT_GT(expectedMaxModelLength, 0u);
+    rapidjson::Document d;
+    getJson("/v1/models/lm_cb_regular", d);
+    ASSERT_TRUE(d.HasMember("max_model_len"));
+    EXPECT_EQ(d["max_model_len"].GetUint(), expectedMaxModelLength);
+    for (const std::string name : {"dummy", "passthroughGraph"}) {
+        rapidjson::Document nonLlm;
+        getJson("/v1/models/" + name, nonLlm);
+        EXPECT_EQ(nonLlm["id"], name.c_str());
+        EXPECT_FALSE(nonLlm.HasMember("max_model_len")) << name;
+    }
 }

@@ -753,6 +753,7 @@ Status MediapipeGraphDefinition::initializeNodes() {
     // Register LoRA aliases for routing from initialized image gen pipelines
     this->loraAliases = sidePacketMaps->loraAliases;
     this->hideBaseModelInRouting = sidePacketMaps->hideBaseModelInRouting;
+    this->maxModelLength.store(sidePacketMaps->maxModelLength.value_or(0), std::memory_order_relaxed);
     success = true;
     return StatusCode::OK;
 }

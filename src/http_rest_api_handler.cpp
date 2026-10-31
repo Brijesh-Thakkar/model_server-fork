@@ -58,6 +58,7 @@
 #include "profiler.hpp"
 #include "rest_parser.hpp"
 #include "rest_utils.hpp"
+#include "servable_definition.hpp"
 #include "src/servable_management/servablemanagermodule.hpp"
 #include "server.hpp"
 #include "status.hpp"
@@ -573,7 +574,12 @@ static Status createV3HttpPayload(
 }
 #endif
 
-void parseModel(rapidjson::Writer<rapidjson::StringBuffer>& writer, const std::string& name, const time_t timestamp) {
+static uint32_t getMaxModelLength(const ModelManager& modelManager, const std::string& name) {
+    const auto* definition = modelManager.findServableDefinition(name);
+    return definition != nullptr ? definition->getMaxModelLength() : 0;
+}
+
+void parseModel(rapidjson::Writer<rapidjson::StringBuffer>& writer, const std::string& name, const time_t timestamp, const uint32_t maxModelLength) {
     writer.StartObject();
     writer.String("id");
     writer.String(name.c_str());
@@ -583,6 +589,10 @@ void parseModel(rapidjson::Writer<rapidjson::StringBuffer>& writer, const std::s
     writer.Int64(timestamp);
     writer.String("owned_by");
     writer.String("OVMS");
+    if (maxModelLength > 0) {
+        writer.String("max_model_len");
+        writer.Uint(maxModelLength);
+    }
     writer.EndObject();
 }
 
@@ -602,7 +612,7 @@ Status HttpRestApiHandler::processRetrieveModelRequest(const std::string& name, 
     }
     time_t timestamp;
     time(&timestamp);
-    parseModel(writer, name, timestamp);
+    parseModel(writer, name, timestamp, getMaxModelLength(modelManager, name));
     response = buffer.GetString();
     return StatusCode::OK;
 }
@@ -616,7 +626,7 @@ Status HttpRestApiHandler::processListModelsRequest(std::string& response) {
     writer.String("data");
     writer.StartArray();
     for (auto const& name : modelManager.getNamesOfAvailableServables()) {
-        parseModel(writer, name, timestamp);
+        parseModel(writer, name, timestamp, getMaxModelLength(modelManager, name));
     }
     writer.EndArray();
     writer.String("object");

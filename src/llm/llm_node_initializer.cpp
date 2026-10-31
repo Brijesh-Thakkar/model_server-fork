@@ -14,6 +14,7 @@
 // limitations under the License.
 //*****************************************************************************
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -60,6 +61,8 @@ public:
             SPDLOG_ERROR("Failed to process LLM node graph {}", graphName);
             return status;
         }
+        // Reported by the models endpoint, which is unambiguous only for a graph with a single LLM node
+        sidePackets.maxModelLength = genAiServableMap.empty() ? servable->getProperties()->maxModelLength : std::nullopt;
         genAiServableMap.insert(std::pair<std::string, std::shared_ptr<GenAiServable>>(nodeName, std::move(servable)));
         sidePackets.genAiExecutionContextMap.emplace(
             nodeName, std::make_shared<GenAiExecutionContextHolder>());
